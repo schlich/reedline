@@ -9,7 +9,7 @@ use crate::{
     enums::{EditCommand, ReedlineEvent, ReedlineRawEvent},
     PromptEditMode,
 };
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 /// Returns the current default emacs keybindings
 pub fn default_emacs_keybindings() -> Keybindings {
@@ -52,7 +52,7 @@ pub fn default_emacs_keybindings() -> Keybindings {
         edit_bind(EC::PasteCutBufferBefore),
     );
     kb.add_binding(KM::CONTROL, KC::Char('w'), edit_bind(EC::CutWordLeft));
-    kb.add_binding(KM::CONTROL, KC::Char('k'), edit_bind(EC::CutToLineEnd));
+    kb.add_binding(KM::CONTROL, KC::Char('k'), edit_bind(EC::KillLine));
     kb.add_binding(KM::CONTROL, KC::Char('u'), edit_bind(EC::CutFromStart));
     kb.add_binding(KM::ALT, KC::Char('d'), edit_bind(EC::CutWordRight));
     // Edits
@@ -85,6 +85,16 @@ pub fn default_emacs_keybindings() -> Keybindings {
             ReedlineEvent::HistoryHintWordComplete,
             edit_bind(EC::MoveWordRight { select: false }),
         ]),
+    );
+    kb.add_binding(
+        KM::ALT,
+        KC::Char('<'),
+        edit_bind(EC::MoveToStart { select: false }),
+    );
+    kb.add_binding(
+        KM::ALT,
+        KC::Char('>'),
+        edit_bind(EC::MoveToEnd { select: false }),
     );
     // Edits
     kb.add_binding(KM::ALT, KC::Delete, edit_bind(EC::DeleteWord));
@@ -164,7 +174,17 @@ impl EditMode for Emacs {
                     .unwrap_or(ReedlineEvent::None),
             },
 
-            Event::Mouse(_) => ReedlineEvent::Mouse,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(button),
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            }) => ReedlineEvent::Mouse {
+                column,
+                row,
+                button: button.into(),
+            },
+            Event::Mouse(_) => ReedlineEvent::None,
             Event::Resize(width, height) => ReedlineEvent::Resize(width, height),
             Event::FocusGained => ReedlineEvent::None,
             Event::FocusLost => ReedlineEvent::None,
@@ -287,5 +307,19 @@ mod test {
             result,
             ReedlineEvent::Edit(vec![EditCommand::InsertChar('😀')])
         );
+    }
+
+    #[test]
+    fn kill_line() {
+        let mut emacs = Emacs::default();
+
+        let ctrl_k = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('k'),
+            KeyModifiers::CONTROL,
+        )))
+        .unwrap();
+        let result = emacs.parse_event(ctrl_k);
+
+        assert_eq!(result, ReedlineEvent::Edit(vec![EditCommand::KillLine]));
     }
 }
