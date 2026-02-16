@@ -270,14 +270,7 @@ mod test {
     }
 
     #[rstest]
-    fn test_v_enters_select_mode(mut normal_machine: HelixMachine) {
-        normal_machine.input_key('v');
-        let _ = normal_machine.pop();
-        assert_eq!(normal_machine.mode(), HelixMode::Select);
-    }
-
-    #[rstest]
-    fn test_v_toggles_back_to_normal(mut normal_machine: HelixMachine) {
+    fn test_v_toggles_select_mode(mut normal_machine: HelixMachine) {
         normal_machine.input_key('v');
         let _ = normal_machine.pop();
         assert_eq!(normal_machine.mode(), HelixMode::Select);
@@ -288,68 +281,29 @@ mod test {
     }
 
     #[rstest]
-    fn test_select_mode_anchor_stays_fixed(mut normal_machine: HelixMachine) {
-        // Enter Select mode
+    #[case("hello\n", Cursor::new(0, 1), &['l', 'l'], &[Cursor::new(0, 2), Cursor::new(0, 3)])]
+    #[case("hello\nworld\n", Cursor::new(0, 2), &['j', 'l'], &[Cursor::new(1, 2), Cursor::new(1, 3)])]
+    fn test_select_mode_anchor_fixed(
+        mut normal_machine: HelixMachine,
+        #[case] text: &str,
+        #[case] start: Cursor,
+        #[case] keys: &[char],
+        #[case] expected_heads: &[Cursor],
+    ) {
         normal_machine.input_key('v');
         let _ = normal_machine.pop();
 
-        // Move right twice
-        normal_machine.input_key('l');
-        let (action1, _) = normal_machine.pop().unwrap();
-        normal_machine.input_key('l');
-        let (action2, _) = normal_machine.pop().unwrap();
+        let mut tb = TestBuf::new(text, start.clone());
 
-        let mut tb = TestBuf::new("hello\n", Cursor::new(0, 1));
+        for (key, expected_head) in keys.iter().zip(expected_heads) {
+            normal_machine.input_key(*key);
+            let (action, _) = normal_machine.pop().unwrap();
+            let target = action.to_edit_target(Count::Exact(1));
+            tb.apply_motion(&target);
 
-        let target1 = action1.to_edit_target(Count::Exact(1));
-        tb.apply_motion(&target1);
-
-        let sel = tb.selection().unwrap();
-        assert_eq!(sel.0, Cursor::new(0, 1), "anchor fixed after first move");
-        assert_eq!(sel.1, Cursor::new(0, 2), "head moved right once");
-
-        let target2 = action2.to_edit_target(Count::Exact(1));
-        tb.apply_motion(&target2);
-
-        let sel = tb.selection().unwrap();
-        assert_eq!(
-            sel.0,
-            Cursor::new(0, 1),
-            "anchor still fixed after second move"
-        );
-        assert_eq!(sel.1, Cursor::new(0, 3), "head moved right twice");
-    }
-
-    #[rstest]
-    fn test_select_mode_multiline_anchor_fixed(mut normal_machine: HelixMachine) {
-        // Enter Select mode
-        normal_machine.input_key('v');
-        let _ = normal_machine.pop();
-
-        // Move down then right
-        normal_machine.input_key('j');
-        let (action_down, _) = normal_machine.pop().unwrap();
-        normal_machine.input_key('l');
-        let (action_right, _) = normal_machine.pop().unwrap();
-
-        let mut tb = TestBuf::new("hello\nworld\n", Cursor::new(0, 2));
-
-        let target = action_down.to_edit_target(Count::Exact(1));
-        tb.apply_motion(&target);
-
-        let sel = tb.selection().unwrap();
-        assert_eq!(sel.0, Cursor::new(0, 2), "anchor fixed after move down");
-        assert_eq!(sel.1, Cursor::new(1, 2), "head moved down");
-
-        let target = action_right.to_edit_target(Count::Exact(1));
-        tb.apply_motion(&target);
-
-        let sel = tb.selection().unwrap();
-        assert_eq!(
-            sel.0,
-            Cursor::new(0, 2),
-            "anchor still fixed after move right"
-        );
-        assert_eq!(sel.1, Cursor::new(1, 3), "head moved right on second line");
+            let sel = tb.selection().unwrap();
+            assert_eq!(sel.0, start, "anchor should stay fixed");
+            assert_eq!(sel.1, *expected_head, "head should have moved");
+        }
     }
 }
