@@ -202,27 +202,22 @@ mod test {
     }
 
     #[rstest]
-    fn test_move_line_down(mut normal_machine: HelixMachine) {
-        normal_machine.input_key('j');
+    #[case('j', HelixAction::MoveLine(MoveDir1D::Next), Cursor::new(2, 2))]
+    #[case('k', HelixAction::MoveLine(MoveDir1D::Previous), Cursor::new(0, 2))]
+    fn test_move_line(
+        mut normal_machine: HelixMachine,
+        #[case] key: char,
+        #[case] expected_action: HelixAction,
+        #[case] end: Cursor,
+    ) {
+        normal_machine.input_key(key);
         let (action, _) = normal_machine.pop().unwrap();
-        assert_eq!(action, HelixAction::MoveLine(MoveDir1D::Next));
+        assert_eq!(action, expected_action);
 
         let target = action.to_edit_target(Count::Exact(1));
-        let mut tb = TestBuf::new("hello\nworld\n", Cursor::new(0, 2));
+        let mut tb = TestBuf::new("hello\nworld\nfoo\n", Cursor::new(1, 2));
         tb.apply_motion(&target);
-        assert_eq!(tb.leader(), Cursor::new(1, 2));
-    }
-
-    #[rstest]
-    fn test_move_line_up(mut normal_machine: HelixMachine) {
-        normal_machine.input_key('k');
-        let (action, _) = normal_machine.pop().unwrap();
-        assert_eq!(action, HelixAction::MoveLine(MoveDir1D::Previous));
-
-        let target = action.to_edit_target(Count::Exact(1));
-        let mut tb = TestBuf::new("hello\nworld\n", Cursor::new(1, 2));
-        tb.apply_motion(&target);
-        assert_eq!(tb.leader(), Cursor::new(0, 2));
+        assert_eq!(tb.leader(), end);
     }
 
     #[test]
