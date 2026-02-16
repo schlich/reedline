@@ -56,6 +56,8 @@ impl InputBindings<char, HelixStep> for HelixBindings {
 
 type HelixStep = (Option<HelixAction>, Option<HelixMode>);
 pub type HelixMachine = ModalMachine<char, HelixStep>;
+use keybindings::InputState;
+
 
 #[cfg(test)]
 #[cfg(feature = "hx")]
@@ -73,4 +75,5 @@ mod test {
         machine.input_key(ESC);
         assert_eq!(machine.mode(), HelixMode::Normal);
     }
+
 }
