@@ -14,6 +14,7 @@ enum HelixMode {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum HelixAction {
     Type(char),
+    MoveCharLeft,
     #[default]
     NoOp,
     Quit,
@@ -51,6 +52,12 @@ impl InputBindings<char, HelixStep> for HelixBindings {
             &[(Once, Key(ESC))],
             &(None, Some(HelixMode::Normal)),
         );
+
+        machine.add_mapping(
+            HelixMode::Normal,
+            &[(Once, Key('h'))],
+            &(Some(HelixAction::MoveCharLeft), None),
+        );
     }
 }
 
@@ -74,6 +81,17 @@ mod test {
         let mut machine = HelixMachine::from_bindings::<HelixBindings>();
         machine.input_key(ESC);
         assert_eq!(machine.mode(), HelixMode::Normal);
+    }
+
+    #[test]
+    fn test_move_char_left_action() {
+        let mut machine = HelixMachine::from_bindings::<HelixBindings>();
+
+        machine.input_key(ESC);
+        assert_eq!(machine.mode(), HelixMode::Normal);
+
+        let actions = machine.input_key('h');
+        assert_eq!(actions, vec![HelixAction::MoveCharLeft]);
     }
 
 }
