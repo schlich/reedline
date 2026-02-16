@@ -1,8 +1,9 @@
-use keybindings::{
-    BindingMachine, EmptyKeyState, InputBindings, InputKey, ModalMachine, Mode, ModeKeys,
+use modalkit::prelude::{MoveDir1D, MoveType};
+use modalkit::keybindings::{
+    BindingMachine, EmptyKeyState, InputBindings, InputKey, ModalMachine, Mode, ModeKeys, EdgeEvent, EdgeRepeat
 };
 
-const ESC: char = '\u{1B}';
+const ESC:char = '\u{1B}';
 
 #[derive(Clone, Copy, Debug, Default, Hash, Eq, PartialEq)]
 enum HelixMode {
@@ -14,10 +15,9 @@ enum HelixMode {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum HelixAction {
     Type(char),
-    MoveCharLeft,
+    Move(MoveType),
     #[default]
     NoOp,
-    Quit,
 }
 
 #[derive(Default)]
@@ -44,31 +44,29 @@ impl<K: InputKey> ModeKeys<K, HelixAction, EmptyKeyState> for HelixMode {
 
 impl InputBindings<char, HelixStep> for HelixBindings {
     fn setup(&self, machine: &mut HelixMachine) {
-        use keybindings::EdgeEvent::Key;
-        use keybindings::EdgeRepeat::Once;
 
         machine.add_mapping(
             HelixMode::Insert,
-            &[(Once, Key(ESC))],
+            &[(EdgeRepeat::Once, EdgeEvent::Key(ESC))],
             &(None, Some(HelixMode::Normal)),
         );
 
         machine.add_mapping(
             HelixMode::Normal,
-            &[(Once, Key('h'))],
-            &(Some(HelixAction::MoveCharLeft), None),
+            &[(EdgeRepeat::Once, EdgeEvent::Key('h'))],
+            &(Some(HelixAction::Move(MoveType::Column(MoveDir1D::Previous, false))), None),
         );
     }
 }
 
 type HelixStep = (Option<HelixAction>, Option<HelixMode>);
 pub type HelixMachine = ModalMachine<char, HelixStep>;
-use keybindings::InputState;
 
 
 #[cfg(test)]
 #[cfg(feature = "hx")]
 mod test {
+
     use super::*;
 
     #[test]
@@ -89,9 +87,14 @@ mod test {
 
         machine.input_key(ESC);
         assert_eq!(machine.mode(), HelixMode::Normal);
+        let _ = machine.pop();
 
-        let actions = machine.input_key('h');
-        assert_eq!(actions, vec![HelixAction::MoveCharLeft]);
+        machine.input_key('h');
+        let action = machine.pop();
+        assert_eq!(
+            action,
+            Some((HelixAction::Move(MoveType::Column(MoveDir1D::Previous, false)), EmptyKeyState::default()))
+        )
     }
 
 }
