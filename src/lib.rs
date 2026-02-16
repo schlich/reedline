@@ -270,7 +270,7 @@ pub use prompt::{
 
 mod edit_mode;
 #[cfg(feature = "hx")]
-pub use edit_mode::Helix;
+pub use edit_mode::HelixMachine;
 pub use edit_mode::{
     default_emacs_keybindings, default_vi_insert_keybindings, default_vi_normal_keybindings,
     CursorConfig, EditMode, Emacs, Keybindings, Vi,

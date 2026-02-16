@@ -1,53 +1,61 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-
-use crate::{
-    enums::{ReedlineEvent, ReedlineRawEvent},
-    PromptEditMode,
+use keybindings::{
+    BindingMachine, EmptyKeyState, InputBindings, InputKey, ModalMachine, Mode, ModeKeys,
 };
 
-use super::EditMode;
+const ESC: char = '\u{1B}';
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Hash, Eq, PartialEq)]
 enum HelixMode {
-    Normal,
+    #[default]
     Insert,
+    Normal,
 }
 
-pub struct Helix {
-    mode: HelixMode,
-    cache: Vec<char>,
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+enum HelixAction {
+    Type(char),
+    #[default]
+    NoOp,
+    Quit,
 }
 
-impl Default for Helix {
-    fn default() -> Self {
-        Self {
-            mode: HelixMode::Insert,
-            cache: Vec::new(),
-        }
-    }
-}
+#[derive(Default)]
+struct HelixBindings {}
 
-impl EditMode for Helix {
-    fn parse_event(&mut self, event: ReedlineRawEvent) -> ReedlineEvent {
-        match event.into() {
-            Event::Key(KeyEvent {
-                code, modifiers, ..
-            }) => match (self.mode, modifiers, code) {
-                (HelixMode::Insert, KeyModifiers::NONE, KeyCode::Esc) => {
-                    self.cache.clear();
-                    self.mode = HelixMode::Normal;
-                    ReedlineEvent::Multiple(vec![ReedlineEvent::Esc, ReedlineEvent::Repaint])
+impl Mode<HelixAction, EmptyKeyState> for HelixMode {}
+
+impl<K: InputKey> ModeKeys<K, HelixAction, EmptyKeyState> for HelixMode {
+    fn unmapped(&self, key: &K, _: &mut EmptyKeyState) -> (Vec<HelixAction>, Option<HelixMode>) {
+        match self {
+            HelixMode::Normal => {
+                return (vec![], None);
+            }
+            HelixMode::Insert => {
+                if let Some(c) = key.get_char() {
+                    return (vec![HelixAction::Type(c)], None);
                 }
-                _ => ReedlineEvent::None,
-            },
-            _ => ReedlineEvent::None,
+
+                return (vec![], None);
+            }
         }
     }
+}
 
-    fn edit_mode(&self) -> PromptEditMode {
-        PromptEditMode::Custom("hx".to_string())
+impl InputBindings<char, HelixStep> for HelixBindings {
+    fn setup(&self, machine: &mut HelixMachine) {
+        use keybindings::EdgeEvent::Key;
+        use keybindings::EdgeRepeat::Once;
+
+        machine.add_mapping(
+            HelixMode::Insert,
+            &[(Once, Key(ESC))],
+            &(None, Some(HelixMode::Normal)),
+        );
     }
 }
+
+type HelixStep = (Option<HelixAction>, Option<HelixMode>);
+pub type HelixMachine = ModalMachine<char, HelixStep>;
 
 #[cfg(test)]
 #[cfg(feature = "hx")]
@@ -55,17 +63,14 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_esc_leads_to_normal_mode() {
-        let mut hx = Helix::default();
-        let esc =
-            ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
-                .unwrap();
-        let result = hx.parse_event(esc);
+    fn test_insert_mode_is_default() {
+        assert_eq!(HelixMachine::empty().mode(), HelixMode::Insert);
+    }
 
-        assert_eq!(
-            result,
-            ReedlineEvent::Multiple(vec![ReedlineEvent::Esc, ReedlineEvent::Repaint])
-        );
-        assert_eq!(hx.mode, HelixMode::Normal);
+    #[test]
+    fn test_escape_to_normal_mode() {
+        let mut machine = HelixMachine::from_bindings::<HelixBindings>();
+        machine.input_key(ESC);
+        assert_eq!(machine.mode(), HelixMode::Normal);
     }
 }
