@@ -85,6 +85,7 @@ mod test {
     use modalkit::prelude::{TargetShape, ViewportContext};
     use modalkit::actions::{EditAction, EditorActions};
     use modalkit::env::vim::VimState;
+    use rstest::*;
 
     fn mkbuf(
         s: &str,
@@ -123,42 +124,35 @@ mod test {
         assert_eq!(machine.mode(), HelixMode::Normal);
     }
 
-    fn normal_key_action(key: char) -> HelixAction {
+    #[fixture]
+    fn normal_machine() -> HelixMachine {
         let mut machine = HelixMachine::from_bindings::<HelixBindings>();
         machine.input_key(ESC);
         let _ = machine.pop();
-
-        machine.input_key(key);
-        let (action, _) = machine.pop().unwrap();
-        action
+        machine
     }
 
-    #[test]
-    fn test_move_char_left() {
-        let action = normal_key_action('h');
-        assert_eq!(action, HelixAction::MoveChar(MoveDir1D::Previous));
+    #[rstest]
+    #[case('h', HelixAction::MoveChar(MoveDir1D::Previous), Cursor::new(0, 3), Cursor::new(0, 2))]
+    #[case('l', HelixAction::MoveChar(MoveDir1D::Next),     Cursor::new(0, 2), Cursor::new(0, 3))]
+    fn test_move_char(
+        mut normal_machine: HelixMachine,
+        #[case] key: char,
+        #[case] expected_action: HelixAction,
+        #[case] start: Cursor,
+        #[case] end: Cursor,
+    ) {
+        normal_machine.input_key(key);
+        let (action, _) = normal_machine.pop().unwrap();
+        assert_eq!(action, expected_action);
 
         let target = action.to_edit_target(Count::Exact(1)).expect("action should map to an EditTarget");
 
-        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 3));
+        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", start);
         let ectx = helix_edit_context();
         let ctx = &(gid, &vwctx, &ectx);
         ebuf.edit(&EditAction::Motion, &target, ctx, &mut store).unwrap();
-        assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 2));
-    }
-
-    #[test]
-    fn test_move_char_right() {
-        let action = normal_key_action('l');
-        assert_eq!(action, HelixAction::MoveChar(MoveDir1D::Next));
-
-        let target = action.to_edit_target(Count::Exact(1)).expect("action should map to an EditTarget");
-
-        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 2));
-        let ectx = helix_edit_context();
-        let ctx = &(gid, &vwctx, &ectx);
-        ebuf.edit(&EditAction::Motion, &target, ctx, &mut store).unwrap();
-        assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 3));
+        assert_eq!(ebuf.get_leader(gid), end);
     }
 
     #[test]
@@ -171,9 +165,10 @@ mod test {
         assert_eq!(sel, (start.clone(), start, TargetShape::CharWise));
     }
 
-    #[test]
-    fn test_selection_survives_motion() {
-        let action = normal_key_action('l');
+    #[rstest]
+    fn test_selection_survives_motion(mut normal_machine: HelixMachine) {
+        normal_machine.input_key('l');
+        let (action, _) = normal_machine.pop().unwrap();
         let target = action.to_edit_target(Count::Exact(1)).expect("action should map to an EditTarget");
 
         let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 2));
