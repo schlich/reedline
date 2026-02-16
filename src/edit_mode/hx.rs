@@ -1,8 +1,11 @@
-use modalkit::keybindings::{
-    BindingMachine, EdgeEvent, EdgeRepeat, EmptyKeyState, InputBindings, InputKey, ModalMachine,
-    Mode, ModeKeys,
+use modalkit::{
+    editing::context::EditContext,
+    keybindings::{
+        BindingMachine, EdgeEvent, EdgeRepeat, EmptyKeyState, InputBindings, InputKey,
+        ModalMachine, Mode, ModeKeys,
+    },
+    prelude::{Count, EditTarget, MoveDir1D, MoveType},
 };
-use modalkit::prelude::{Count, EditTarget, MoveDir1D, MoveType};
 
 const ESC: char = '\u{1B}';
 
@@ -87,14 +90,19 @@ pub type HelixMachine = ModalMachine<char, HelixStep>;
 mod test {
 
     use super::*;
-    use modalkit::actions::{EditAction, EditorActions};
-    use modalkit::editing::application::EmptyInfo;
-    use modalkit::editing::buffer::{EditBuffer, CursorGroupId};
-    use modalkit::editing::context::EditContextBuilder;
-    use modalkit::editing::cursor::{Cursor, CursorGroup, CursorState};
-    use modalkit::editing::store::Store;
-    use modalkit::env::vim::VimState;
-    use modalkit::prelude::{TargetShape, ViewportContext};
+    use modalkit::{
+        actions::{EditAction, EditorActions},
+        editing::{
+            application::EmptyInfo,
+            buffer::{CursorGroupId, EditBuffer},
+            context::EditContextBuilder,
+            cursor::{Cursor, CursorGroup, CursorState},
+            store::Store,
+        },
+        env::vim::VimState,
+        prelude::{TargetShape, ViewportContext},
+    };
+
     use rstest::*;
 
     fn mkbuf(
@@ -121,7 +129,7 @@ mod test {
         (buf, gid, vwctx, vctx, store)
     }
 
-    fn helix_edit_context() -> modalkit::editing::context::EditContext {
+    fn helix_edit_context() -> EditContext {
         EditContextBuilder::default()
             .target_shape(Some(TargetShape::CharWise))
             .build()
@@ -148,34 +156,21 @@ mod test {
     }
 
     #[rstest]
-    #[case(
-        'h',
-        HelixAction::MoveChar(MoveDir1D::Previous),
-        Cursor::new(0, 3),
-        Cursor::new(0, 2)
-    )]
-    #[case(
-        'l',
-        HelixAction::MoveChar(MoveDir1D::Next),
-        Cursor::new(0, 2),
-        Cursor::new(0, 3)
-    )]
+    #[case('h', HelixAction::MoveChar(MoveDir1D::Previous), Cursor::new(0, 1))]
+    #[case('l', HelixAction::MoveChar(MoveDir1D::Next), Cursor::new(0, 3))]
     fn test_move_char(
         mut normal_machine: HelixMachine,
         #[case] key: char,
         #[case] expected_action: HelixAction,
-        #[case] start: Cursor,
         #[case] end: Cursor,
     ) {
         normal_machine.input_key(key);
         let (action, _) = normal_machine.pop().unwrap();
         assert_eq!(action, expected_action);
 
-        let target = action
-            .to_edit_target(Count::Exact(1))
-            .expect("action should map to an EditTarget");
+        let target = action.to_edit_target(Count::Exact(1));
 
-        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", start);
+        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 2));
         let ectx = helix_edit_context();
         let ctx = &(gid, &vwctx, &ectx);
         ebuf.edit(&EditAction::Motion, &target, ctx, &mut store)
@@ -185,13 +180,13 @@ mod test {
 
     #[test]
     fn test_cursor_always_has_selection() {
-        let start = Cursor::new(0, 2);
-        let (mut ebuf, gid, _, _, _) = mkbuf("hello\n", start.clone());
+        let (mut ebuf, gid, _, _, _) = mkbuf("hello\n", Cursor::new(0, 2));
 
-        let sel = ebuf
-            .get_leader_selection(gid)
-            .expect("leader should always have a selection in Normal mode");
-        assert_eq!(sel, (start.clone(), start, TargetShape::CharWise));
+        let sel = ebuf.get_leader_selection(gid);
+        assert_eq!(
+            sel,
+            Some((Cursor::new(0, 2), Cursor::new(0, 2), TargetShape::CharWise))
+        );
     }
 
     #[rstest]
@@ -208,9 +203,7 @@ mod test {
         ebuf.edit(&EditAction::Motion, &target, ctx, &mut store)
             .unwrap();
 
-        let sel = ebuf
-            .get_leader_selection(gid)
-            .expect("selection must survive a motion in Normal mode");
+        let sel = ebuf.get_leader_selection(gid).unwrap();
         assert_eq!(sel.0, Cursor::new(0, 2), "anchor should stay at start");
         assert_eq!(sel.1, Cursor::new(0, 3), "head should have moved");
         assert_eq!(sel.2, TargetShape::CharWise, "shape should remain CharWise");
