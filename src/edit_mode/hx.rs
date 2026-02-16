@@ -81,6 +81,11 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
         'j',
         (Some(HelixAction::MoveLine(MoveDir1D::Next)), None),
     ),
+    (
+        HelixMode::Normal,
+        'k',
+        (Some(HelixAction::MoveLine(MoveDir1D::Previous)), None),
+    ),
 ];
 
 impl InputBindings<char, HelixStep> for HelixBindings {
@@ -206,6 +211,18 @@ mod test {
         let mut tb = TestBuf::new("hello\nworld\n", Cursor::new(0, 2));
         tb.apply_motion(&target);
         assert_eq!(tb.leader(), Cursor::new(1, 2));
+    }
+
+    #[rstest]
+    fn test_move_line_up(mut normal_machine: HelixMachine) {
+        normal_machine.input_key('k');
+        let (action, _) = normal_machine.pop().unwrap();
+        assert_eq!(action, HelixAction::MoveLine(MoveDir1D::Previous));
+
+        let target = action.to_edit_target(Count::Exact(1));
+        let mut tb = TestBuf::new("hello\nworld\n", Cursor::new(1, 2));
+        tb.apply_motion(&target);
+        assert_eq!(tb.leader(), Cursor::new(0, 2));
     }
 
     #[test]
