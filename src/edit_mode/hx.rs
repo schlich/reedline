@@ -1,5 +1,4 @@
 use modalkit::{
-    editing::context::EditContext,
     keybindings::{
         BindingMachine, EdgeEvent, EdgeRepeat, EmptyKeyState, InputBindings, InputKey,
         ModalMachine, Mode, ModeKeys,
@@ -20,6 +19,7 @@ enum HelixMode {
 enum HelixAction {
     Type(char),
     MoveChar(MoveDir1D),
+    MoveLine(MoveDir1D),
     #[default]
     NoOp,
 }
@@ -30,6 +30,7 @@ impl TryFrom<HelixAction> for MoveType {
     fn try_from(action: HelixAction) -> Result<Self, ()> {
         match action {
             HelixAction::MoveChar(dir) => Ok(MoveType::Column(dir, false)),
+            HelixAction::MoveLine(dir) => Ok(MoveType::Line(dir)),
             _ => Err(()),
         }
     }
@@ -42,6 +43,9 @@ impl HelixAction {
             .map(|mv| EditTarget::Motion(mv, count))
     }
 }
+
+type HelixStep = (Option<HelixAction>, Option<HelixMode>);
+pub type HelixMachine = ModalMachine<char, HelixStep>;
 
 #[derive(Default)]
 struct HelixBindings;
@@ -72,6 +76,11 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
         'l',
         (Some(HelixAction::MoveChar(MoveDir1D::Next)), None),
     ),
+    (
+        HelixMode::Normal,
+        'j',
+        (Some(HelixAction::MoveLine(MoveDir1D::Next)), None),
+    ),
 ];
 
 impl InputBindings<char, HelixStep> for HelixBindings {
@@ -82,9 +91,6 @@ impl InputBindings<char, HelixStep> for HelixBindings {
     }
 }
 
-type HelixStep = (Option<HelixAction>, Option<HelixMode>);
-pub type HelixMachine = ModalMachine<char, HelixStep>;
-
 #[cfg(test)]
 #[cfg(feature = "hx")]
 mod test {
@@ -94,45 +100,61 @@ mod test {
         actions::{EditAction, EditorActions},
         editing::{
             application::EmptyInfo,
-            buffer::{CursorGroupId, EditBuffer},
+            buffer::EditBuffer,
             context::EditContextBuilder,
             cursor::{Cursor, CursorGroup, CursorState},
             store::Store,
         },
-        env::vim::VimState,
         prelude::{TargetShape, ViewportContext},
     };
 
     use rstest::*;
 
-    fn mkbuf(
-        s: &str,
-        start: Cursor,
-    ) -> (
-        EditBuffer<EmptyInfo>,
-        CursorGroupId,
-        ViewportContext<Cursor>,
-        VimState,
-        Store<EmptyInfo>,
-    ) {
-        let mut buf = EditBuffer::new("".to_string());
-        let gid = buf.create_group();
-        let vwctx = ViewportContext::default();
-        let vctx = VimState::default();
-        let store = Store::default();
-
-        buf.set_text(s);
-
-        let leader = CursorState::Selection(start.clone(), start, TargetShape::CharWise);
-        buf.set_group(gid, CursorGroup::new(leader, vec![]));
-
-        (buf, gid, vwctx, vctx, store)
+    struct TestBuf {
+        ebuf: EditBuffer<EmptyInfo>,
+        gid: modalkit::editing::buffer::CursorGroupId,
+        vwctx: ViewportContext<Cursor>,
+        store: Store<EmptyInfo>,
     }
 
-    fn helix_edit_context() -> EditContext {
-        EditContextBuilder::default()
-            .target_shape(Some(TargetShape::CharWise))
-            .build()
+    impl TestBuf {
+        fn new(s: &str, start: Cursor) -> Self {
+            let mut ebuf = EditBuffer::new("".to_string());
+            let gid = ebuf.create_group();
+            let vwctx = ViewportContext::default();
+            let store = Store::default();
+
+            ebuf.set_text(s);
+
+            let leader = CursorState::Selection(start.clone(), start, TargetShape::CharWise);
+            ebuf.set_group(gid, CursorGroup::new(leader, vec![]));
+
+            Self {
+                ebuf,
+                gid,
+                vwctx,
+                store,
+            }
+        }
+
+        fn apply_motion(&mut self, target: &Option<EditTarget>) {
+            let target = target.as_ref().expect("action should map to an EditTarget");
+            let ectx = EditContextBuilder::default()
+                .target_shape(Some(TargetShape::CharWise))
+                .build();
+            let ctx = &(self.gid, &self.vwctx, &ectx);
+            self.ebuf
+                .edit(&EditAction::Motion, target, ctx, &mut self.store)
+                .unwrap();
+        }
+
+        fn leader(&mut self) -> Cursor {
+            self.ebuf.get_leader(self.gid)
+        }
+
+        fn selection(&mut self) -> Option<(Cursor, Cursor, TargetShape)> {
+            self.ebuf.get_leader_selection(self.gid)
+        }
     }
 
     #[test]
@@ -169,22 +191,28 @@ mod test {
         assert_eq!(action, expected_action);
 
         let target = action.to_edit_target(Count::Exact(1));
+        let mut tb = TestBuf::new("hello\n", Cursor::new(0, 2));
+        tb.apply_motion(&target);
+        assert_eq!(tb.leader(), end);
+    }
 
-        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 2));
-        let ectx = helix_edit_context();
-        let ctx = &(gid, &vwctx, &ectx);
-        ebuf.edit(&EditAction::Motion, &target, ctx, &mut store)
-            .unwrap();
-        assert_eq!(ebuf.get_leader(gid), end);
+    #[rstest]
+    fn test_move_line_down(mut normal_machine: HelixMachine) {
+        normal_machine.input_key('j');
+        let (action, _) = normal_machine.pop().unwrap();
+        assert_eq!(action, HelixAction::MoveLine(MoveDir1D::Next));
+
+        let target = action.to_edit_target(Count::Exact(1));
+        let mut tb = TestBuf::new("hello\nworld\n", Cursor::new(0, 2));
+        tb.apply_motion(&target);
+        assert_eq!(tb.leader(), Cursor::new(1, 2));
     }
 
     #[test]
     fn test_cursor_always_has_selection() {
-        let (mut ebuf, gid, _, _, _) = mkbuf("hello\n", Cursor::new(0, 2));
-
-        let sel = ebuf.get_leader_selection(gid);
+        let mut tb = TestBuf::new("hello\n", Cursor::new(0, 2));
         assert_eq!(
-            sel,
+            tb.selection(),
             Some((Cursor::new(0, 2), Cursor::new(0, 2), TargetShape::CharWise))
         );
     }
@@ -193,17 +221,12 @@ mod test {
     fn test_selection_survives_motion(mut normal_machine: HelixMachine) {
         normal_machine.input_key('l');
         let (action, _) = normal_machine.pop().unwrap();
-        let target = action
-            .to_edit_target(Count::Exact(1))
-            .expect("action should map to an EditTarget");
+        let target = action.to_edit_target(Count::Exact(1));
 
-        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 2));
-        let ectx = helix_edit_context();
-        let ctx = &(gid, &vwctx, &ectx);
-        ebuf.edit(&EditAction::Motion, &target, ctx, &mut store)
-            .unwrap();
+        let mut tb = TestBuf::new("hello\n", Cursor::new(0, 2));
+        tb.apply_motion(&target);
 
-        let sel = ebuf.get_leader_selection(gid).unwrap();
+        let sel = tb.selection().unwrap();
         assert_eq!(sel.0, Cursor::new(0, 2), "anchor should stay at start");
         assert_eq!(sel.1, Cursor::new(0, 3), "head should have moved");
         assert_eq!(sel.2, TargetShape::CharWise, "shape should remain CharWise");
