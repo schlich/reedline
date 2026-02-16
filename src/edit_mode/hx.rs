@@ -16,6 +16,7 @@ enum HelixMode {
 enum HelixAction {
     Type(char),
     MoveCharLeft,
+    MoveCharRight,
     #[default]
     NoOp,
 }
@@ -24,6 +25,7 @@ impl HelixAction {
     fn to_move_type(&self) -> Option<MoveType> {
         match self {
             HelixAction::MoveCharLeft => Some(MoveType::Column(MoveDir1D::Previous, false)),
+            HelixAction::MoveCharRight => Some(MoveType::Column(MoveDir1D::Next, false)),
             _ => None,
         }
     }
@@ -64,6 +66,12 @@ impl InputBindings<char, HelixStep> for HelixBindings {
             HelixMode::Normal,
             &[(EdgeRepeat::Once, EdgeEvent::Key('h'))],
             &(Some(HelixAction::MoveCharLeft), None),
+        );
+
+        machine.add_mapping(
+            HelixMode::Normal,
+            &[(EdgeRepeat::Once, EdgeEvent::Key('l'))],
+            &(Some(HelixAction::MoveCharRight), None),
         );
     }
 }
@@ -134,6 +142,30 @@ mod test {
         let ctx = &(gid, &vwctx, &modalkit::editing::context::EditContext::default());
         ebuf.edit(&EditAction::Motion, &target, ctx, &mut store).unwrap();
         assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 2));
+    }
+
+    #[test]
+    fn test_move_char_right_action() {
+        let mut machine = HelixMachine::from_bindings::<HelixBindings>();
+
+        machine.input_key(ESC);
+        assert_eq!(machine.mode(), HelixMode::Normal);
+        let _ = machine.pop();
+
+        machine.input_key('l');
+        let (action, _) = machine.pop().unwrap();
+        assert_eq!(action, HelixAction::MoveCharRight);
+
+        let mv = action.to_move_type().expect("MoveCharRight should map to a MoveType");
+
+        let (mut ebuf, gid, vwctx, vctx, mut store) = mkfivestr("hello\n");
+        ebuf.set_leader(gid, Cursor::new(0, 2));
+        assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 2));
+
+        let target = EditTarget::Motion(mv, Count::Exact(1));
+        let ctx = &(gid, &vwctx, &modalkit::editing::context::EditContext::default());
+        ebuf.edit(&EditAction::Motion, &target, ctx, &mut store).unwrap();
+        assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 3));
     }
 
 }
