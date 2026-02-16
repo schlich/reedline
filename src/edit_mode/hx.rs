@@ -1,7 +1,7 @@
 use modalkit::keybindings::{
     BindingMachine, EmptyKeyState, InputBindings, InputKey, ModalMachine, Mode, ModeKeys, EdgeEvent, EdgeRepeat
 };
-use modalkit::prelude::{MoveDir1D, MoveType};
+use modalkit::prelude::{Count, EditTarget, MoveDir1D, MoveType};
 
 const ESC:char = '\u{1B}';
 
@@ -12,67 +12,59 @@ enum HelixMode {
     Normal,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum HelixAction {
     Type(char),
-    MoveCharLeft,
-    MoveCharRight,
+    MoveChar(MoveDir1D),
     #[default]
     NoOp,
 }
 
-impl HelixAction {
-    fn to_move_type(&self) -> Option<MoveType> {
-        match self {
-            HelixAction::MoveCharLeft => Some(MoveType::Column(MoveDir1D::Previous, false)),
-            HelixAction::MoveCharRight => Some(MoveType::Column(MoveDir1D::Next, false)),
-            _ => None,
+impl TryFrom<HelixAction> for MoveType {
+    type Error = ();
+
+    fn try_from(action: HelixAction) -> Result<Self, ()> {
+        match action {
+            HelixAction::MoveChar(dir) => Ok(MoveType::Column(dir, false)),
+            _ => Err(()),
         }
     }
 }
 
+impl HelixAction {
+    fn to_edit_target(&self, count: Count) -> Option<EditTarget> {
+        MoveType::try_from(*self).ok().map(|mv| EditTarget::Motion(mv, count))
+    }
+}
+
 #[derive(Default)]
-struct HelixBindings {}
+struct HelixBindings;
 
 impl Mode<HelixAction, EmptyKeyState> for HelixMode {}
 
 impl<K: InputKey> ModeKeys<K, HelixAction, EmptyKeyState> for HelixMode {
     fn unmapped(&self, key: &K, _: &mut EmptyKeyState) -> (Vec<HelixAction>, Option<HelixMode>) {
         match self {
-            HelixMode::Normal => {
-                return (vec![], None);
-            }
-            HelixMode::Insert => {
-                if let Some(c) = key.get_char() {
-                    return (vec![HelixAction::Type(c)], None);
-                }
-
-                return (vec![], None);
-            }
+            HelixMode::Normal => (vec![], None),
+            HelixMode::Insert => match key.get_char() {
+                Some(c) => (vec![HelixAction::Type(c)], None),
+                None => (vec![], None),
+            },
         }
     }
 }
 
+const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
+    (HelixMode::Insert, ESC, (None, Some(HelixMode::Normal))),
+    (HelixMode::Normal, 'h', (Some(HelixAction::MoveChar(MoveDir1D::Previous)), None)),
+    (HelixMode::Normal, 'l', (Some(HelixAction::MoveChar(MoveDir1D::Next)), None)),
+];
+
 impl InputBindings<char, HelixStep> for HelixBindings {
     fn setup(&self, machine: &mut HelixMachine) {
-
-        machine.add_mapping(
-            HelixMode::Insert,
-            &[(EdgeRepeat::Once, EdgeEvent::Key(ESC))],
-            &(None, Some(HelixMode::Normal)),
-        );
-
-        machine.add_mapping(
-            HelixMode::Normal,
-            &[(EdgeRepeat::Once, EdgeEvent::Key('h'))],
-            &(Some(HelixAction::MoveCharLeft), None),
-        );
-
-        machine.add_mapping(
-            HelixMode::Normal,
-            &[(EdgeRepeat::Once, EdgeEvent::Key('l'))],
-            &(Some(HelixAction::MoveCharRight), None),
-        );
+        for &(mode, key, ref step) in BINDINGS {
+            machine.add_mapping(mode, &[(EdgeRepeat::Once, EdgeEvent::Key(key))], step);
+        }
     }
 }
 
@@ -87,14 +79,16 @@ mod test {
     use super::*;
     use modalkit::editing::application::EmptyInfo;
     use modalkit::editing::buffer::EditBuffer;
-    use modalkit::editing::cursor::Cursor;
+    use modalkit::editing::context::EditContextBuilder;
+    use modalkit::editing::cursor::{Cursor, CursorGroup, CursorState};
     use modalkit::editing::store::Store;
-    use modalkit::prelude::{Count, EditTarget, ViewportContext};
+    use modalkit::prelude::{TargetShape, ViewportContext};
     use modalkit::actions::{EditAction, EditorActions};
     use modalkit::env::vim::VimState;
 
-    fn mkfivestr(
+    fn mkbuf(
         s: &str,
+        start: Cursor,
     ) -> (EditBuffer<EmptyInfo>, modalkit::editing::buffer::CursorGroupId, ViewportContext<Cursor>, VimState, Store<EmptyInfo>)
     {
         let mut buf = EditBuffer::new("".to_string());
@@ -105,7 +99,16 @@ mod test {
 
         buf.set_text(s);
 
+        let leader = CursorState::Selection(start.clone(), start, TargetShape::CharWise);
+        buf.set_group(gid, CursorGroup::new(leader, vec![]));
+
         (buf, gid, vwctx, vctx, store)
+    }
+
+    fn helix_edit_context() -> modalkit::editing::context::EditContext {
+        EditContextBuilder::default()
+            .target_shape(Some(TargetShape::CharWise))
+            .build()
     }
 
     #[test]
@@ -120,52 +123,69 @@ mod test {
         assert_eq!(machine.mode(), HelixMode::Normal);
     }
 
-    #[test]
-    fn test_move_char_left_action() {
+    fn normal_key_action(key: char) -> HelixAction {
         let mut machine = HelixMachine::from_bindings::<HelixBindings>();
-
         machine.input_key(ESC);
-        assert_eq!(machine.mode(), HelixMode::Normal);
         let _ = machine.pop();
 
-        machine.input_key('h');
+        machine.input_key(key);
         let (action, _) = machine.pop().unwrap();
-        assert_eq!(action, HelixAction::MoveCharLeft);
+        action
+    }
 
-        let mv = action.to_move_type().expect("MoveCharLeft should map to a MoveType");
+    #[test]
+    fn test_move_char_left() {
+        let action = normal_key_action('h');
+        assert_eq!(action, HelixAction::MoveChar(MoveDir1D::Previous));
 
-        let (mut ebuf, gid, vwctx, vctx, mut store) = mkfivestr("hello\n");
-        ebuf.set_leader(gid, Cursor::new(0, 3));
-        assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 3));
+        let target = action.to_edit_target(Count::Exact(1)).expect("action should map to an EditTarget");
 
-        let target = EditTarget::Motion(mv, Count::Exact(1));
-        let ctx = &(gid, &vwctx, &modalkit::editing::context::EditContext::default());
+        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 3));
+        let ectx = helix_edit_context();
+        let ctx = &(gid, &vwctx, &ectx);
         ebuf.edit(&EditAction::Motion, &target, ctx, &mut store).unwrap();
         assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 2));
     }
 
     #[test]
-    fn test_move_char_right_action() {
-        let mut machine = HelixMachine::from_bindings::<HelixBindings>();
+    fn test_move_char_right() {
+        let action = normal_key_action('l');
+        assert_eq!(action, HelixAction::MoveChar(MoveDir1D::Next));
 
-        machine.input_key(ESC);
-        assert_eq!(machine.mode(), HelixMode::Normal);
-        let _ = machine.pop();
+        let target = action.to_edit_target(Count::Exact(1)).expect("action should map to an EditTarget");
 
-        machine.input_key('l');
-        let (action, _) = machine.pop().unwrap();
-        assert_eq!(action, HelixAction::MoveCharRight);
-
-        let mv = action.to_move_type().expect("MoveCharRight should map to a MoveType");
-
-        let (mut ebuf, gid, vwctx, vctx, mut store) = mkfivestr("hello\n");
-        ebuf.set_leader(gid, Cursor::new(0, 2));
-        assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 2));
-
-        let target = EditTarget::Motion(mv, Count::Exact(1));
-        let ctx = &(gid, &vwctx, &modalkit::editing::context::EditContext::default());
+        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 2));
+        let ectx = helix_edit_context();
+        let ctx = &(gid, &vwctx, &ectx);
         ebuf.edit(&EditAction::Motion, &target, ctx, &mut store).unwrap();
         assert_eq!(ebuf.get_leader(gid), Cursor::new(0, 3));
+    }
+
+    #[test]
+    fn test_cursor_always_has_selection() {
+        let start = Cursor::new(0, 2);
+        let (mut ebuf, gid, _, _, _) = mkbuf("hello\n", start.clone());
+
+        let sel = ebuf.get_leader_selection(gid)
+            .expect("leader should always have a selection in Normal mode");
+        assert_eq!(sel, (start.clone(), start, TargetShape::CharWise));
+    }
+
+    #[test]
+    fn test_selection_survives_motion() {
+        let action = normal_key_action('l');
+        let target = action.to_edit_target(Count::Exact(1)).expect("action should map to an EditTarget");
+
+        let (mut ebuf, gid, vwctx, _vctx, mut store) = mkbuf("hello\n", Cursor::new(0, 2));
+        let ectx = helix_edit_context();
+        let ctx = &(gid, &vwctx, &ectx);
+        ebuf.edit(&EditAction::Motion, &target, ctx, &mut store).unwrap();
+
+        let sel = ebuf.get_leader_selection(gid)
+            .expect("selection must survive a motion in Normal mode");
+        assert_eq!(sel.0, Cursor::new(0, 2), "anchor should stay at start");
+        assert_eq!(sel.1, Cursor::new(0, 3), "head should have moved");
+        assert_eq!(sel.2, TargetShape::CharWise, "shape should remain CharWise");
     }
 
 }
