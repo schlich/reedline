@@ -1,6 +1,6 @@
 mod bindings;
 mod commands;
-
+use actions::HelixAction;
 use modalkit::{
     keybindings::{BindingMachine, EmptyKeyState, InputKey, ModalMachine, Mode, ModeKeys},
     prelude::EditTarget,
@@ -17,23 +17,6 @@ pub enum HelixMode {
     Select,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-/// Actions produced by the experimental Helix edit mode key machine.
-pub enum HelixAction {
-    Type(char),
-    Motion(EditTarget),
-    #[default]
-    NoOp,
-}
-
-impl HelixAction {
-    fn motion_target(&self) -> Option<&EditTarget> {
-        match self {
-            HelixAction::Motion(target) => Some(target),
-            _ => None,
-        }
-    }
-}
 
 type HelixStep = (Option<HelixAction>, Option<HelixMode>);
 /// Modal keybinding machine used by reedline's experimental Helix edit mode.
