@@ -1,14 +1,10 @@
+mod bindings;
 mod commands;
 
 use modalkit::{
-    keybindings::{
-        BindingMachine, EdgeEvent, EdgeRepeat, EmptyKeyState, InputBindings, InputKey,
-        ModalMachine, Mode, ModeKeys,
-    },
+    keybindings::{BindingMachine, EmptyKeyState, InputKey, ModalMachine, Mode, ModeKeys},
     prelude::EditTarget,
 };
-
-use self::commands::{MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP};
 
 const ESC: char = '\u{1B}';
 
@@ -43,9 +39,6 @@ type HelixStep = (Option<HelixAction>, Option<HelixMode>);
 /// Modal keybinding machine used by reedline's experimental Helix edit mode.
 pub type HelixMachine = ModalMachine<char, HelixStep>;
 
-#[derive(Default)]
-struct HelixBindings;
-
 impl Mode<HelixAction, EmptyKeyState> for HelixMode {}
 
 impl<K: InputKey> ModeKeys<K, HelixAction, EmptyKeyState> for HelixMode {
@@ -60,66 +53,11 @@ impl<K: InputKey> ModeKeys<K, HelixAction, EmptyKeyState> for HelixMode {
     }
 }
 
-const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
-    (HelixMode::Insert, ESC, (None, Some(HelixMode::Normal))),
-    (
-        HelixMode::Normal,
-        'h',
-        (Some(HelixAction::Motion(MOVE_CHAR_LEFT)), None),
-    ),
-    (
-        HelixMode::Normal,
-        'l',
-        (Some(HelixAction::Motion(MOVE_CHAR_RIGHT)), None),
-    ),
-    (
-        HelixMode::Normal,
-        'j',
-        (Some(HelixAction::Motion(MOVE_LINE_DOWN)), None),
-    ),
-    (
-        HelixMode::Normal,
-        'k',
-        (Some(HelixAction::Motion(MOVE_LINE_UP)), None),
-    ),
-    // v toggles between Normal and Select
-    (HelixMode::Normal, 'v', (None, Some(HelixMode::Select))),
-    (HelixMode::Select, 'v', (None, Some(HelixMode::Normal))),
-    // Select mode has the same motion bindings as Normal
-    (
-        HelixMode::Select,
-        'h',
-        (Some(HelixAction::Motion(MOVE_CHAR_LEFT)), None),
-    ),
-    (
-        HelixMode::Select,
-        'l',
-        (Some(HelixAction::Motion(MOVE_CHAR_RIGHT)), None),
-    ),
-    (
-        HelixMode::Select,
-        'j',
-        (Some(HelixAction::Motion(MOVE_LINE_DOWN)), None),
-    ),
-    (
-        HelixMode::Select,
-        'k',
-        (Some(HelixAction::Motion(MOVE_LINE_UP)), None),
-    ),
-];
-
-impl InputBindings<char, HelixStep> for HelixBindings {
-    fn setup(&self, machine: &mut HelixMachine) {
-        for &(mode, key, ref step) in BINDINGS {
-            machine.add_mapping(mode, &[(EdgeRepeat::Once, EdgeEvent::Key(key))], step);
-        }
-    }
-}
-
 #[cfg(test)]
 #[cfg(feature = "hx")]
 mod test {
 
+    use super::bindings::HelixBindings;
     use super::commands::{MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP};
     use super::*;
     use modalkit::{
