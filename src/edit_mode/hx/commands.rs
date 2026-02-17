@@ -4,7 +4,7 @@
 //! so keybindings can stay traceable to Helix docs without translation layers.
 //! Reference: <https://github.com/helix-editor/helix/blob/master/book/src/keymap.md>
 
-use modalkit::prelude::{Count, EditTarget, MoveDir1D, MoveType};
+use modalkit::prelude::{Count, EditTarget, MoveDir1D, MoveType, WordStyle};
 
 use super::{HelixAction, HelixMode, HelixStep};
 
@@ -25,6 +25,12 @@ pub(super) const MOVE_VISUAL_LINE_DOWN: EditTarget =
 /// `move_visual_line_up`
 pub(super) const MOVE_VISUAL_LINE_UP: EditTarget =
     EditTarget::Motion(MoveType::Line(MoveDir1D::Previous), Count::Contextual);
+
+/// `move_next_word_start`
+pub(super) const MOVE_NEXT_WORD_START: EditTarget = EditTarget::Motion(
+    MoveType::WordEnd(WordStyle::Whitespace(false), MoveDir1D::Next),
+    Count::Contextual,
+);
 
 /// `insert_mode` (`i`): enter Insert with cursor before the current selection.
 pub(super) const INSERT_MODE: HelixStep = (None, Some(HelixMode::Insert));

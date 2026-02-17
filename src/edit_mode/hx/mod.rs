@@ -182,6 +182,23 @@ mod test {
         assert_eq!(tb.leader(), end);
     }
 
+    #[rstest]
+    fn test_move_next_word_start_lands_on_last_whitespace(mut normal_machine: HelixMachine) {
+        normal_machine.input_key('w');
+        let (action, _) = normal_machine.pop().unwrap();
+
+        let mut tb = TestBuf::new("one  two\n", Cursor::new(0, 0));
+        tb.apply_motion(&action);
+
+        let sel = tb.selection().unwrap();
+        assert_eq!(sel.0, Cursor::new(0, 0), "anchor should stay at start");
+        assert_eq!(
+            sel.1,
+            Cursor::new(0, 4),
+            "head should land on last whitespace"
+        );
+    }
+
     #[test]
     fn test_cursor_always_has_selection() {
         let mut tb = TestBuf::new("hello\n", Cursor::new(0, 2));
