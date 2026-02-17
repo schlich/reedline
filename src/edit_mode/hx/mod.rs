@@ -3,7 +3,7 @@ mod commands;
 
 use modalkit::{
     keybindings::{BindingMachine, EmptyKeyState, InputKey, ModalMachine, Mode, ModeKeys},
-    prelude::EditTarget,
+    prelude::{EditTarget, MoveDir1D},
 };
 
 const ESC: char = '\u{1B}';
@@ -22,6 +22,10 @@ pub enum HelixMode {
 pub enum HelixAction {
     Type(char),
     Motion(EditTarget),
+    /// Helix-style "traverse" motion: moves head via the EditTarget and
+    /// resets anchor 1 cell past the old head in the given direction.
+    /// This produces non-overlapping selections on consecutive motions.
+    TraverseMotion(EditTarget, MoveDir1D),
     #[default]
     NoOp,
 }
@@ -30,6 +34,7 @@ impl HelixAction {
     fn motion_target(&self) -> Option<&EditTarget> {
         match self {
             HelixAction::Motion(target) => Some(target),
+            HelixAction::TraverseMotion(target, _) => Some(target),
             _ => None,
         }
     }
@@ -59,8 +64,9 @@ mod test {
 
     use super::bindings::HelixBindings;
     use super::commands::{
-        APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_PREV_WORD_START,
-        MOVE_VISUAL_LINE_DOWN, MOVE_VISUAL_LINE_UP,
+        APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_NEXT_WORD_START,
+        MOVE_PREV_WORD_START, MOVE_VISUAL_LINE_DOWN, MOVE_VISUAL_LINE_UP, TRAVERSE_NEXT_WORD,
+        TRAVERSE_PREV_WORD,
     };
     use super::*;
     use modalkit::{
@@ -72,7 +78,7 @@ mod test {
             cursor::{Cursor, CursorGroup, CursorState},
             store::Store,
         },
-        prelude::{TargetShape, ViewportContext},
+        prelude::{MoveDir1D, TargetShape, ViewportContext},
     };
 
     use rstest::*;
@@ -105,20 +111,60 @@ mod test {
         }
 
         fn apply_motion(&mut self, action: &HelixAction) {
-            let target = action
-                .motion_target()
-                .expect("action should map to an EditTarget");
-            let ectx = EditContextBuilder::default()
-                .target_shape(Some(TargetShape::CharWise))
-                .build();
-            let ctx = &(self.gid, &self.vwctx, &ectx);
-            self.ebuf
-                .edit(&EditAction::Motion, target, ctx, &mut self.store)
-                .unwrap();
+            match action {
+                HelixAction::Motion(target) => {
+                    let ectx = EditContextBuilder::default()
+                        .target_shape(Some(TargetShape::CharWise))
+                        .build();
+                    let ctx = &(self.gid, &self.vwctx, &ectx);
+                    self.ebuf
+                        .edit(&EditAction::Motion, target, ctx, &mut self.store)
+                        .unwrap();
+                }
+                HelixAction::TraverseMotion(target, dir) => {
+                    let old_head = self.leader();
+
+                    let ectx = EditContextBuilder::default()
+                        .target_shape(Some(TargetShape::CharWise))
+                        .build();
+                    let ctx = &(self.gid, &self.vwctx, &ectx);
+                    self.ebuf
+                        .edit(&EditAction::Motion, target, ctx, &mut self.store)
+                        .unwrap();
+
+                    let new_head = self.leader();
+
+                    // Anchor is 1 cell past old head in the motion direction
+                    let anchor = match dir {
+                        MoveDir1D::Next => Cursor::new(old_head.y, old_head.x + 1),
+                        MoveDir1D::Previous => {
+                            Cursor::new(old_head.y, old_head.x.saturating_sub(1))
+                        }
+                    };
+
+                    // CursorState::Selection(cursor/head, anchor, shape)
+                    let leader = CursorState::Selection(new_head, anchor, TargetShape::CharWise);
+                    self.ebuf
+                        .set_group(self.gid, CursorGroup::new(leader, vec![]));
+                }
+                _ => panic!("action should map to a motion"),
+            }
         }
 
         fn leader(&mut self) -> Cursor {
             self.ebuf.get_leader(self.gid)
+        }
+
+        fn anchor(&mut self) -> Cursor {
+            let sel = self.ebuf.get_leader_selection(self.gid).unwrap();
+            let head = self.leader();
+            // get_leader_selection returns sorted (min, max, shape).
+            // Derive anchor: whichever sorted position is NOT the head.
+            if sel.0 == head {
+                sel.1.clone()
+            } else {
+                sel.0.clone()
+            }
         }
 
         fn selection(&mut self) -> Option<(Cursor, Cursor, TargetShape)> {
@@ -190,10 +236,8 @@ mod test {
         let mut tb = TestBuf::new("one  two\n", Cursor::new(0, 0));
         tb.apply_motion(&action);
 
-        let sel = tb.selection().unwrap();
-        assert_eq!(sel.0, Cursor::new(0, 0), "anchor should stay at start");
         assert_eq!(
-            sel.1,
+            tb.leader(),
             Cursor::new(0, 4),
             "head should land on last whitespace"
         );
@@ -203,7 +247,10 @@ mod test {
     fn test_move_prev_word_start_lands_on_word_first_letter(mut normal_machine: HelixMachine) {
         normal_machine.input_key('b');
         let (action, _) = normal_machine.pop().unwrap();
-        assert_eq!(action, HelixAction::Motion(MOVE_PREV_WORD_START));
+        assert_eq!(
+            action,
+            HelixAction::TraverseMotion(MOVE_PREV_WORD_START, MoveDir1D::Previous)
+        );
 
         let mut tb = TestBuf::new("one  two\n", Cursor::new(0, 7));
         tb.apply_motion(&action);
@@ -211,6 +258,61 @@ mod test {
             tb.leader(),
             Cursor::new(0, 5),
             "head should land on word start"
+        );
+    }
+
+    #[rstest]
+    fn test_b_resets_anchor_to_last_whitespace(mut normal_machine: HelixMachine) {
+        // In Helix normal mode, `b` from the first letter of a word should:
+        //   - move head to first letter of the *previous* word
+        //   - reset anchor to the last whitespace cell between the two words
+        //
+        // "one  two\n"
+        //  01234567
+        // Start at 5 ('t' of "two"), press b → head=0 ('o' of "one"), anchor=4 (last space)
+        normal_machine.input_key('b');
+        let (action, _) = normal_machine.pop().unwrap();
+
+        let mut tb = TestBuf::new("one  two\n", Cursor::new(0, 5));
+        tb.apply_motion(&action);
+
+        assert_eq!(
+            tb.anchor(),
+            Cursor::new(0, 4),
+            "anchor should reset to last whitespace between words"
+        );
+        assert_eq!(
+            tb.leader(),
+            Cursor::new(0, 0),
+            "head should land on first letter of previous word"
+        );
+    }
+
+    #[rstest]
+    fn test_w_resets_anchor_to_first_letter(mut normal_machine: HelixMachine) {
+        // In Helix normal mode, `w` from the last whitespace should:
+        //   - move head to the last whitespace before the *next* word boundary
+        //   - reset anchor to the first letter of the word that was traversed
+        //
+        // "one  two  end\n"
+        //  0123456789...
+        // Start at 4 (last space before "two"), press w → head=9 (last space before "end"),
+        // anchor=5 ('t' of "two")
+        normal_machine.input_key('w');
+        let (action, _) = normal_machine.pop().unwrap();
+
+        let mut tb = TestBuf::new("one  two  end\n", Cursor::new(0, 4));
+        tb.apply_motion(&action);
+
+        assert_eq!(
+            tb.anchor(),
+            Cursor::new(0, 5),
+            "anchor should reset to first letter of the traversed word"
+        );
+        assert_eq!(
+            tb.leader(),
+            Cursor::new(0, 9),
+            "head should land on last whitespace before next word"
         );
     }
 

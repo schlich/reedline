@@ -2,7 +2,8 @@ use modalkit::keybindings::{EdgeEvent, EdgeRepeat, InputBindings};
 
 use super::commands::{
     APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_NEXT_WORD_START,
-    MOVE_PREV_WORD_START, MOVE_VISUAL_LINE_DOWN, MOVE_VISUAL_LINE_UP,
+    MOVE_PREV_WORD_START, MOVE_VISUAL_LINE_DOWN, MOVE_VISUAL_LINE_UP, TRAVERSE_NEXT_WORD,
+    TRAVERSE_PREV_WORD,
 };
 use super::{HelixAction, HelixMachine, HelixMode, HelixStep, ESC};
 
@@ -19,7 +20,8 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
     (HelixMode::Select, 'v', (None, Some(HelixMode::Normal))),
 ];
 
-const NORMAL_AND_SELECT_MOTION_BINDINGS: &[(char, HelixStep)] = &[
+/// Motions shared by Normal and Select modes (h, l, j, k).
+const SHARED_MOTION_BINDINGS: &[(char, HelixStep)] = &[
     ('h', (Some(HelixAction::Motion(MOVE_CHAR_LEFT)), None)),
     ('l', (Some(HelixAction::Motion(MOVE_CHAR_RIGHT)), None)),
     (
@@ -27,6 +29,14 @@ const NORMAL_AND_SELECT_MOTION_BINDINGS: &[(char, HelixStep)] = &[
         (Some(HelixAction::Motion(MOVE_VISUAL_LINE_DOWN)), None),
     ),
     ('k', (Some(HelixAction::Motion(MOVE_VISUAL_LINE_UP)), None)),
+];
+
+/// Normal mode word motions: use TraverseMotion for non-overlapping anchor reset.
+const NORMAL_WORD_BINDINGS: &[(char, HelixStep)] =
+    &[('w', TRAVERSE_NEXT_WORD), ('b', TRAVERSE_PREV_WORD)];
+
+/// Select mode word motions: use regular Motion so the anchor stays fixed.
+const SELECT_WORD_BINDINGS: &[(char, HelixStep)] = &[
     ('w', (Some(HelixAction::Motion(MOVE_NEXT_WORD_START)), None)),
     ('b', (Some(HelixAction::Motion(MOVE_PREV_WORD_START)), None)),
 ];
@@ -40,9 +50,25 @@ impl InputBindings<char, HelixStep> for HelixBindings {
         }
 
         for &mode in NORMAL_AND_SELECT_MODES {
-            for &(key, ref step) in NORMAL_AND_SELECT_MOTION_BINDINGS {
+            for &(key, ref step) in SHARED_MOTION_BINDINGS {
                 machine.add_mapping(mode, &[(EdgeRepeat::Once, EdgeEvent::Key(key))], step);
             }
+        }
+
+        for &(key, ref step) in NORMAL_WORD_BINDINGS {
+            machine.add_mapping(
+                HelixMode::Normal,
+                &[(EdgeRepeat::Once, EdgeEvent::Key(key))],
+                step,
+            );
+        }
+
+        for &(key, ref step) in SELECT_WORD_BINDINGS {
+            machine.add_mapping(
+                HelixMode::Select,
+                &[(EdgeRepeat::Once, EdgeEvent::Key(key))],
+                step,
+            );
         }
     }
 }

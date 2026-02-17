@@ -38,6 +38,26 @@ pub(super) const MOVE_PREV_WORD_START: EditTarget = EditTarget::Motion(
     Count::Contextual,
 );
 
+/// `move_next_word_start` with Helix-style non-overlapping anchor reset (normal mode).
+/// Anchor resets 1 cell forward from old head so consecutive traversals don't overlap.
+pub(super) const TRAVERSE_NEXT_WORD: HelixStep = (
+    Some(HelixAction::TraverseMotion(
+        MOVE_NEXT_WORD_START,
+        MoveDir1D::Next,
+    )),
+    None,
+);
+
+/// `move_prev_word_start` with Helix-style non-overlapping anchor reset (normal mode).
+/// Anchor resets 1 cell backward from old head so consecutive traversals don't overlap.
+pub(super) const TRAVERSE_PREV_WORD: HelixStep = (
+    Some(HelixAction::TraverseMotion(
+        MOVE_PREV_WORD_START,
+        MoveDir1D::Previous,
+    )),
+    None,
+);
+
 /// `insert_mode` (`i`): enter Insert with cursor before the current selection.
 pub(super) const INSERT_MODE: HelixStep = (None, Some(HelixMode::Insert));
 
