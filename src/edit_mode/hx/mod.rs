@@ -1,51 +1,46 @@
+mod commands;
+
 use modalkit::{
     keybindings::{
         BindingMachine, EdgeEvent, EdgeRepeat, EmptyKeyState, InputBindings, InputKey,
         ModalMachine, Mode, ModeKeys,
     },
-    prelude::{Count, EditTarget, MoveDir1D, MoveType},
+    prelude::EditTarget,
 };
+
+use self::commands::{MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP};
 
 const ESC: char = '\u{1B}';
 
 #[derive(Clone, Copy, Debug, Default, Hash, Eq, PartialEq)]
-enum HelixMode {
+/// Modal states for the experimental Helix edit mode key machine.
+pub enum HelixMode {
     #[default]
     Insert,
     Normal,
     Select,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum HelixAction {
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// Actions produced by the experimental Helix edit mode key machine.
+pub enum HelixAction {
     Type(char),
-    MoveChar(MoveDir1D),
-    MoveLine(MoveDir1D),
+    Motion(EditTarget),
     #[default]
     NoOp,
 }
 
-impl TryFrom<HelixAction> for MoveType {
-    type Error = ();
-
-    fn try_from(action: HelixAction) -> Result<Self, ()> {
-        match action {
-            HelixAction::MoveChar(dir) => Ok(MoveType::Column(dir, false)),
-            HelixAction::MoveLine(dir) => Ok(MoveType::Line(dir)),
-            _ => Err(()),
+impl HelixAction {
+    fn motion_target(&self) -> Option<&EditTarget> {
+        match self {
+            HelixAction::Motion(target) => Some(target),
+            _ => None,
         }
     }
 }
 
-impl HelixAction {
-    fn to_edit_target(&self, count: Count) -> Option<EditTarget> {
-        MoveType::try_from(*self)
-            .ok()
-            .map(|mv| EditTarget::Motion(mv, count))
-    }
-}
-
 type HelixStep = (Option<HelixAction>, Option<HelixMode>);
+/// Modal keybinding machine used by reedline's experimental Helix edit mode.
 pub type HelixMachine = ModalMachine<char, HelixStep>;
 
 #[derive(Default)]
@@ -70,22 +65,22 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
     (
         HelixMode::Normal,
         'h',
-        (Some(HelixAction::MoveChar(MoveDir1D::Previous)), None),
+        (Some(HelixAction::Motion(MOVE_CHAR_LEFT)), None),
     ),
     (
         HelixMode::Normal,
         'l',
-        (Some(HelixAction::MoveChar(MoveDir1D::Next)), None),
+        (Some(HelixAction::Motion(MOVE_CHAR_RIGHT)), None),
     ),
     (
         HelixMode::Normal,
         'j',
-        (Some(HelixAction::MoveLine(MoveDir1D::Next)), None),
+        (Some(HelixAction::Motion(MOVE_LINE_DOWN)), None),
     ),
     (
         HelixMode::Normal,
         'k',
-        (Some(HelixAction::MoveLine(MoveDir1D::Previous)), None),
+        (Some(HelixAction::Motion(MOVE_LINE_UP)), None),
     ),
     // v toggles between Normal and Select
     (HelixMode::Normal, 'v', (None, Some(HelixMode::Select))),
@@ -94,22 +89,22 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
     (
         HelixMode::Select,
         'h',
-        (Some(HelixAction::MoveChar(MoveDir1D::Previous)), None),
+        (Some(HelixAction::Motion(MOVE_CHAR_LEFT)), None),
     ),
     (
         HelixMode::Select,
         'l',
-        (Some(HelixAction::MoveChar(MoveDir1D::Next)), None),
+        (Some(HelixAction::Motion(MOVE_CHAR_RIGHT)), None),
     ),
     (
         HelixMode::Select,
         'j',
-        (Some(HelixAction::MoveLine(MoveDir1D::Next)), None),
+        (Some(HelixAction::Motion(MOVE_LINE_DOWN)), None),
     ),
     (
         HelixMode::Select,
         'k',
-        (Some(HelixAction::MoveLine(MoveDir1D::Previous)), None),
+        (Some(HelixAction::Motion(MOVE_LINE_UP)), None),
     ),
 ];
 
@@ -125,6 +120,7 @@ impl InputBindings<char, HelixStep> for HelixBindings {
 #[cfg(feature = "hx")]
 mod test {
 
+    use super::commands::{MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP};
     use super::*;
     use modalkit::{
         actions::{EditAction, EditorActions},
@@ -167,8 +163,10 @@ mod test {
             }
         }
 
-        fn apply_motion(&mut self, target: &Option<EditTarget>) {
-            let target = target.as_ref().expect("action should map to an EditTarget");
+        fn apply_motion(&mut self, action: &HelixAction) {
+            let target = action
+                .motion_target()
+                .expect("action should map to an EditTarget");
             let ectx = EditContextBuilder::default()
                 .target_shape(Some(TargetShape::CharWise))
                 .build();
@@ -208,8 +206,8 @@ mod test {
     }
 
     #[rstest]
-    #[case('h', HelixAction::MoveChar(MoveDir1D::Previous), Cursor::new(0, 1))]
-    #[case('l', HelixAction::MoveChar(MoveDir1D::Next), Cursor::new(0, 3))]
+    #[case('h', HelixAction::Motion(MOVE_CHAR_LEFT), Cursor::new(0, 1))]
+    #[case('l', HelixAction::Motion(MOVE_CHAR_RIGHT), Cursor::new(0, 3))]
     fn test_move_char(
         mut normal_machine: HelixMachine,
         #[case] key: char,
@@ -220,15 +218,14 @@ mod test {
         let (action, _) = normal_machine.pop().unwrap();
         assert_eq!(action, expected_action);
 
-        let target = action.to_edit_target(Count::Exact(1));
         let mut tb = TestBuf::new("hello\n", Cursor::new(0, 2));
-        tb.apply_motion(&target);
+        tb.apply_motion(&action);
         assert_eq!(tb.leader(), end);
     }
 
     #[rstest]
-    #[case('j', HelixAction::MoveLine(MoveDir1D::Next), Cursor::new(2, 2))]
-    #[case('k', HelixAction::MoveLine(MoveDir1D::Previous), Cursor::new(0, 2))]
+    #[case('j', HelixAction::Motion(MOVE_LINE_DOWN), Cursor::new(2, 2))]
+    #[case('k', HelixAction::Motion(MOVE_LINE_UP), Cursor::new(0, 2))]
     fn test_move_line(
         mut normal_machine: HelixMachine,
         #[case] key: char,
@@ -239,9 +236,8 @@ mod test {
         let (action, _) = normal_machine.pop().unwrap();
         assert_eq!(action, expected_action);
 
-        let target = action.to_edit_target(Count::Exact(1));
         let mut tb = TestBuf::new("hello\nworld\nfoo\n", Cursor::new(1, 2));
-        tb.apply_motion(&target);
+        tb.apply_motion(&action);
         assert_eq!(tb.leader(), end);
     }
 
@@ -258,10 +254,9 @@ mod test {
     fn test_selection_survives_motion(mut normal_machine: HelixMachine) {
         normal_machine.input_key('l');
         let (action, _) = normal_machine.pop().unwrap();
-        let target = action.to_edit_target(Count::Exact(1));
 
         let mut tb = TestBuf::new("hello\n", Cursor::new(0, 2));
-        tb.apply_motion(&target);
+        tb.apply_motion(&action);
 
         let sel = tb.selection().unwrap();
         assert_eq!(sel.0, Cursor::new(0, 2), "anchor should stay at start");
@@ -298,8 +293,7 @@ mod test {
         for (key, expected_head) in keys.iter().zip(expected_heads) {
             normal_machine.input_key(*key);
             let (action, _) = normal_machine.pop().unwrap();
-            let target = action.to_edit_target(Count::Exact(1));
-            tb.apply_motion(&target);
+            tb.apply_motion(&action);
 
             let sel = tb.selection().unwrap();
             assert_eq!(sel.0, start, "anchor should stay fixed");
