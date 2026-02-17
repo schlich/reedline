@@ -13,4 +13,4 @@ pub use vi::{default_vi_insert_keybindings, default_vi_normal_keybindings, Vi};
 #[cfg(feature = "hx")]
 mod hx;
 #[cfg(feature = "hx")]
-pub use hx::HelixMachine;
+pub use hx::{Helix, HelixMachine};

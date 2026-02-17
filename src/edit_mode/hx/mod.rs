@@ -1,9 +1,13 @@
+mod actions;
 mod bindings;
 mod commands;
+
+use crate::{EditCommand, EditMode, PromptEditMode, ReedlineEvent, ReedlineRawEvent};
 use actions::HelixAction;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+
 use modalkit::{
     keybindings::{BindingMachine, EmptyKeyState, InputKey, ModalMachine, Mode, ModeKeys},
-    prelude::EditTarget,
 };
 
 const ESC: char = '\u{1B}';
@@ -32,6 +36,124 @@ impl<K: InputKey> ModeKeys<K, HelixAction, EmptyKeyState> for HelixMode {
                 Some(c) => (vec![HelixAction::Type(c)], None),
                 None => (vec![], None),
             },
+        }
+    }
+}
+
+/// Experimental Helix-inspired [`EditMode`].
+#[derive(Clone, Debug, Default)]
+pub struct Helix {
+    mode: HelixMode,
+}
+
+impl EditMode for Helix {
+    fn parse_event(&mut self, event: ReedlineRawEvent) -> ReedlineEvent {
+        match event.into() {
+            Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) => {
+                if modifiers == KeyModifiers::CONTROL {
+                    match code {
+                        KeyCode::Char('c') => return ReedlineEvent::CtrlC,
+                        KeyCode::Char('d') => return ReedlineEvent::CtrlD,
+                        _ => {}
+                    }
+                }
+
+                if modifiers == KeyModifiers::NONE && code == KeyCode::Esc {
+                    self.mode = HelixMode::Normal;
+                    return ReedlineEvent::Multiple(vec![ReedlineEvent::Esc, ReedlineEvent::Repaint]);
+                }
+
+                match (self.mode, modifiers, code) {
+                    (
+                        HelixMode::Insert,
+                        KeyModifiers::NONE | KeyModifiers::SHIFT,
+                        KeyCode::Char(c),
+                    ) => ReedlineEvent::Edit(vec![EditCommand::InsertChar(c)]),
+                    (HelixMode::Insert, KeyModifiers::NONE, KeyCode::Enter) => ReedlineEvent::Enter,
+                    (HelixMode::Insert, _, _) => ReedlineEvent::None,
+
+                    (HelixMode::Normal, KeyModifiers::NONE, KeyCode::Char('i')) => {
+                        self.mode = HelixMode::Insert;
+                        ReedlineEvent::Repaint
+                    }
+                    (HelixMode::Normal, KeyModifiers::NONE, KeyCode::Char('a')) => {
+                        self.mode = HelixMode::Insert;
+                        ReedlineEvent::Multiple(vec![ReedlineEvent::Right, ReedlineEvent::Repaint])
+                    }
+                    (HelixMode::Normal, KeyModifiers::NONE, KeyCode::Char('v')) => {
+                        self.mode = HelixMode::Select;
+                        ReedlineEvent::Repaint
+                    }
+                    (HelixMode::Select, KeyModifiers::NONE, KeyCode::Char('v')) => {
+                        self.mode = HelixMode::Normal;
+                        ReedlineEvent::Repaint
+                    }
+
+                    (
+                        HelixMode::Normal | HelixMode::Select,
+                        KeyModifiers::NONE,
+                        KeyCode::Char('h'),
+                    ) => ReedlineEvent::Edit(vec![EditCommand::MoveLeft { select: true }]),
+                    (
+                        HelixMode::Normal | HelixMode::Select,
+                        KeyModifiers::NONE,
+                        KeyCode::Char('l'),
+                    ) => ReedlineEvent::UntilFound(vec![
+                        ReedlineEvent::HistoryHintComplete,
+                        ReedlineEvent::MenuRight,
+                        ReedlineEvent::Edit(vec![EditCommand::MoveRight { select: true }]),
+                    ]),
+                    (
+                        HelixMode::Normal | HelixMode::Select,
+                        KeyModifiers::NONE,
+                        KeyCode::Char('j'),
+                    ) => ReedlineEvent::UntilFound(vec![ReedlineEvent::MenuDown, ReedlineEvent::Down]),
+                    (
+                        HelixMode::Normal | HelixMode::Select,
+                        KeyModifiers::NONE,
+                        KeyCode::Char('k'),
+                    ) => ReedlineEvent::UntilFound(vec![ReedlineEvent::MenuUp, ReedlineEvent::Up]),
+                    (
+                        HelixMode::Normal | HelixMode::Select,
+                        KeyModifiers::NONE,
+                        KeyCode::Char('w'),
+                    ) => ReedlineEvent::Edit(vec![
+                        EditCommand::MoveWordRightStart { select: true },
+                        EditCommand::MoveLeft { select: true },
+                    ]),
+                    (HelixMode::Normal | HelixMode::Select, KeyModifiers::NONE, KeyCode::Enter) => {
+                        self.mode = HelixMode::Insert;
+                        ReedlineEvent::Enter
+                    }
+                    _ => ReedlineEvent::None,
+                }
+            }
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(button),
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            }) => ReedlineEvent::Mouse {
+                column,
+                row,
+                button: button.into(),
+            },
+            Event::Mouse(_) => ReedlineEvent::None,
+            Event::Resize(width, height) => ReedlineEvent::Resize(width, height),
+            Event::FocusGained | Event::FocusLost => ReedlineEvent::None,
+            Event::Paste(body) => ReedlineEvent::Edit(vec![EditCommand::InsertString(
+                body.replace("\r\n", "\n").replace('\r', "\n"),
+            )]),
+        }
+    }
+
+    fn edit_mode(&self) -> PromptEditMode {
+        match self.mode {
+            HelixMode::Insert => PromptEditMode::Custom("HX_INSERT".into()),
+            HelixMode::Normal => PromptEditMode::Custom("HX_NORMAL".into()),
+            HelixMode::Select => PromptEditMode::Custom("HX_SELECT".into()),
         }
     }
 }
@@ -213,6 +335,98 @@ mod test {
         let (action, _) = normal_machine.pop().unwrap();
         assert_eq!(action, APPEND_MODE.0.clone().unwrap_or_default());
         assert_eq!(normal_machine.mode(), HelixMode::Insert);
+    }
+
+    #[test]
+    fn ctrl_c_maps_to_reedline_ctrlc_in_all_modes() {
+        let ctrl_c = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+        )))
+        .unwrap();
+
+        let mut insert = Helix::default();
+        assert_eq!(insert.parse_event(ctrl_c), ReedlineEvent::CtrlC);
+
+        let mut normal = Helix::default();
+        let esc = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        let _ = normal.parse_event(esc);
+        let ctrl_c = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+        )))
+        .unwrap();
+        assert_eq!(normal.parse_event(ctrl_c), ReedlineEvent::CtrlC);
+
+        let mut select = Helix::default();
+        let esc = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        let _ = select.parse_event(esc);
+        let v = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('v'),
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        let _ = select.parse_event(v);
+        let ctrl_c = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+        )))
+        .unwrap();
+        assert_eq!(select.parse_event(ctrl_c), ReedlineEvent::CtrlC);
+    }
+
+    #[test]
+    fn ctrl_d_maps_to_reedline_ctrld_in_all_modes() {
+        let ctrl_d = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL,
+        )))
+        .unwrap();
+
+        let mut insert = Helix::default();
+        assert_eq!(insert.parse_event(ctrl_d), ReedlineEvent::CtrlD);
+
+        let mut normal = Helix::default();
+        let esc = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        let _ = normal.parse_event(esc);
+        let ctrl_d = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL,
+        )))
+        .unwrap();
+        assert_eq!(normal.parse_event(ctrl_d), ReedlineEvent::CtrlD);
+
+        let mut select = Helix::default();
+        let esc = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        let _ = select.parse_event(esc);
+        let v = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('v'),
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        let _ = select.parse_event(v);
+        let ctrl_d = ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL,
+        )))
+        .unwrap();
+        assert_eq!(select.parse_event(ctrl_d), ReedlineEvent::CtrlD);
     }
 
     #[rstest]
