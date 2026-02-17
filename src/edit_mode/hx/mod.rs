@@ -59,7 +59,8 @@ mod test {
 
     use super::bindings::HelixBindings;
     use super::commands::{
-        APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP,
+        APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_VISUAL_LINE_DOWN,
+        MOVE_VISUAL_LINE_UP,
     };
     use super::*;
     use modalkit::{
@@ -164,8 +165,8 @@ mod test {
     }
 
     #[rstest]
-    #[case('j', HelixAction::Motion(MOVE_LINE_DOWN), Cursor::new(2, 2))]
-    #[case('k', HelixAction::Motion(MOVE_LINE_UP), Cursor::new(0, 2))]
+    #[case('j', HelixAction::Motion(MOVE_VISUAL_LINE_DOWN), Cursor::new(2, 2))]
+    #[case('k', HelixAction::Motion(MOVE_VISUAL_LINE_UP), Cursor::new(0, 2))]
     fn test_move_line(
         mut normal_machine: HelixMachine,
         #[case] key: char,

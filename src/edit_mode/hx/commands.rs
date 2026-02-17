@@ -19,11 +19,11 @@ pub(super) const MOVE_CHAR_RIGHT: EditTarget =
     EditTarget::Motion(MoveType::Column(MoveDir1D::Next, false), Count::Contextual);
 
 /// `move_visual_line_down`
-pub(super) const MOVE_LINE_DOWN: EditTarget =
+pub(super) const MOVE_VISUAL_LINE_DOWN: EditTarget =
     EditTarget::Motion(MoveType::Line(MoveDir1D::Next), Count::Contextual);
 
 /// `move_visual_line_up`
-pub(super) const MOVE_LINE_UP: EditTarget =
+pub(super) const MOVE_VISUAL_LINE_UP: EditTarget =
     EditTarget::Motion(MoveType::Line(MoveDir1D::Previous), Count::Contextual);
 
 /// `insert_mode` (`i`): enter Insert with cursor before the current selection.

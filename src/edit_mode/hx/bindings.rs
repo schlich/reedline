@@ -1,7 +1,8 @@
 use modalkit::keybindings::{EdgeEvent, EdgeRepeat, InputBindings};
 
 use super::commands::{
-    APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP,
+    APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_VISUAL_LINE_DOWN,
+    MOVE_VISUAL_LINE_UP,
 };
 use super::{HelixAction, HelixMachine, HelixMode, HelixStep, ESC};
 
@@ -23,12 +24,12 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
     (
         HelixMode::Normal,
         'j',
-        (Some(HelixAction::Motion(MOVE_LINE_DOWN)), None),
+        (Some(HelixAction::Motion(MOVE_VISUAL_LINE_DOWN)), None),
     ),
     (
         HelixMode::Normal,
         'k',
-        (Some(HelixAction::Motion(MOVE_LINE_UP)), None),
+        (Some(HelixAction::Motion(MOVE_VISUAL_LINE_UP)), None),
     ),
     // Insert mode entry
     (HelixMode::Normal, 'i', INSERT_MODE),
@@ -50,12 +51,12 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
     (
         HelixMode::Select,
         'j',
-        (Some(HelixAction::Motion(MOVE_LINE_DOWN)), None),
+        (Some(HelixAction::Motion(MOVE_VISUAL_LINE_DOWN)), None),
     ),
     (
         HelixMode::Select,
         'k',
-        (Some(HelixAction::Motion(MOVE_LINE_UP)), None),
+        (Some(HelixAction::Motion(MOVE_VISUAL_LINE_UP)), None),
     ),
 ];
 
