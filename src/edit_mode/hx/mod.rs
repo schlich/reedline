@@ -58,7 +58,9 @@ impl<K: InputKey> ModeKeys<K, HelixAction, EmptyKeyState> for HelixMode {
 mod test {
 
     use super::bindings::HelixBindings;
-    use super::commands::{MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP};
+    use super::commands::{
+        APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP,
+    };
     use super::*;
     use modalkit::{
         actions::{EditAction, EditorActions},
@@ -211,6 +213,22 @@ mod test {
         normal_machine.input_key('v');
         let _ = normal_machine.pop();
         assert_eq!(normal_machine.mode(), HelixMode::Normal);
+    }
+
+    #[rstest]
+    fn test_i_enters_insert_mode(mut normal_machine: HelixMachine) {
+        normal_machine.input_key('i');
+        let (action, _) = normal_machine.pop().unwrap();
+        assert_eq!(action, INSERT_MODE.0.clone().unwrap_or_default());
+        assert_eq!(normal_machine.mode(), HelixMode::Insert);
+    }
+
+    #[rstest]
+    fn test_a_enters_insert_mode_after_moving_right(mut normal_machine: HelixMachine) {
+        normal_machine.input_key('a');
+        let (action, _) = normal_machine.pop().unwrap();
+        assert_eq!(action, APPEND_MODE.0.clone().unwrap_or_default());
+        assert_eq!(normal_machine.mode(), HelixMode::Insert);
     }
 
     #[rstest]

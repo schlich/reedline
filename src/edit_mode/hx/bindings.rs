@@ -1,6 +1,8 @@
 use modalkit::keybindings::{EdgeEvent, EdgeRepeat, InputBindings};
 
-use super::commands::{MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP};
+use super::commands::{
+    APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_LINE_DOWN, MOVE_LINE_UP,
+};
 use super::{HelixAction, HelixMachine, HelixMode, HelixStep, ESC};
 
 #[derive(Default)]
@@ -28,6 +30,9 @@ const BINDINGS: &[(HelixMode, char, HelixStep)] = &[
         'k',
         (Some(HelixAction::Motion(MOVE_LINE_UP)), None),
     ),
+    // Insert mode entry
+    (HelixMode::Normal, 'i', INSERT_MODE),
+    (HelixMode::Normal, 'a', APPEND_MODE),
     // v toggles between Normal and Select
     (HelixMode::Normal, 'v', (None, Some(HelixMode::Select))),
     (HelixMode::Select, 'v', (None, Some(HelixMode::Normal))),
