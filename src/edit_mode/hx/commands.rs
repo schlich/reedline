@@ -32,6 +32,12 @@ pub(super) const MOVE_NEXT_WORD_START: EditTarget = EditTarget::Motion(
     Count::Contextual,
 );
 
+/// `move_prev_word_start`
+pub(super) const MOVE_PREV_WORD_START: EditTarget = EditTarget::Motion(
+    MoveType::WordBegin(WordStyle::Little, MoveDir1D::Previous),
+    Count::Contextual,
+);
+
 /// `insert_mode` (`i`): enter Insert with cursor before the current selection.
 pub(super) const INSERT_MODE: HelixStep = (None, Some(HelixMode::Insert));
 

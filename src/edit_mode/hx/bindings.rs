@@ -2,7 +2,7 @@ use modalkit::keybindings::{EdgeEvent, EdgeRepeat, InputBindings};
 
 use super::commands::{
     APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_NEXT_WORD_START,
-    MOVE_VISUAL_LINE_DOWN, MOVE_VISUAL_LINE_UP,
+    MOVE_PREV_WORD_START, MOVE_VISUAL_LINE_DOWN, MOVE_VISUAL_LINE_UP,
 };
 use super::{HelixAction, HelixMachine, HelixMode, HelixStep, ESC};
 
@@ -28,6 +28,7 @@ const NORMAL_AND_SELECT_MOTION_BINDINGS: &[(char, HelixStep)] = &[
     ),
     ('k', (Some(HelixAction::Motion(MOVE_VISUAL_LINE_UP)), None)),
     ('w', (Some(HelixAction::Motion(MOVE_NEXT_WORD_START)), None)),
+    ('b', (Some(HelixAction::Motion(MOVE_PREV_WORD_START)), None)),
 ];
 
 const NORMAL_AND_SELECT_MODES: &[HelixMode] = &[HelixMode::Normal, HelixMode::Select];

@@ -59,8 +59,8 @@ mod test {
 
     use super::bindings::HelixBindings;
     use super::commands::{
-        APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_VISUAL_LINE_DOWN,
-        MOVE_VISUAL_LINE_UP,
+        APPEND_MODE, INSERT_MODE, MOVE_CHAR_LEFT, MOVE_CHAR_RIGHT, MOVE_PREV_WORD_START,
+        MOVE_VISUAL_LINE_DOWN, MOVE_VISUAL_LINE_UP,
     };
     use super::*;
     use modalkit::{
@@ -196,6 +196,21 @@ mod test {
             sel.1,
             Cursor::new(0, 4),
             "head should land on last whitespace"
+        );
+    }
+
+    #[rstest]
+    fn test_move_prev_word_start_lands_on_word_first_letter(mut normal_machine: HelixMachine) {
+        normal_machine.input_key('b');
+        let (action, _) = normal_machine.pop().unwrap();
+        assert_eq!(action, HelixAction::Motion(MOVE_PREV_WORD_START));
+
+        let mut tb = TestBuf::new("one  two\n", Cursor::new(0, 7));
+        tb.apply_motion(&action);
+        assert_eq!(
+            tb.leader(),
+            Cursor::new(0, 5),
+            "head should land on word start"
         );
     }
 
