@@ -56,6 +56,10 @@ pub enum PromptEditMode {
     /// A vi-specific mode
     Vi(PromptViMode),
 
+    /// A helix-specific mode
+    #[cfg(feature = "helix")]
+    Helix(PromptHelixMode),
+
     /// A custom mode
     Custom(String),
 }
@@ -64,9 +68,15 @@ impl PromptEditMode {
     pub(crate) fn rest_policy(&self) -> RestPolicy {
         match self {
             PromptEditMode::Vi(PromptViMode::Normal) => RestPolicy::OnGrapheme,
+            #[cfg(feature = "helix")]
+            PromptEditMode::Helix(PromptHelixMode::Normal | PromptHelixMode::Select) => {
+                RestPolicy::Block
+            }
             PromptEditMode::Vi(PromptViMode::Insert)
             | PromptEditMode::Default
             | PromptEditMode::Emacs => RestPolicy::Between,
+            #[cfg(feature = "helix")]
+            PromptEditMode::Helix(PromptHelixMode::Insert) => RestPolicy::Between,
             // No catch-all `_ =>` arm over the variants on purpose: a future
             // variant (e.g. a Helix mode) then fails to compile here until it is
             // given an explicit policy, rather than silently defaulting. The `_`
@@ -85,6 +95,21 @@ pub enum PromptViMode {
 
     /// Insertion mode
     Insert,
+}
+
+/// The helix-specific modes that the prompt can be in
+#[cfg(feature = "helix")]
+#[derive(Serialize, Deserialize, Clone, Debug, EnumIter, Default)]
+pub enum PromptHelixMode {
+    /// Normal mode
+    #[default]
+    Normal,
+
+    /// Insertion mode
+    Insert,
+
+    /// Selection mode
+    Select,
 }
 
 /// This is the discriminant type for [`PromptEditMode`]
@@ -106,6 +131,21 @@ pub enum PromptEditModeDiscriminants {
     #[strum(serialize = "ViInsert", serialize = "vi_insert")]
     ViInsert,
 
+    /// Helix normal mode
+    #[cfg(feature = "helix")]
+    #[strum(serialize = "HelixNormal", serialize = "helix_normal")]
+    HelixNormal,
+
+    /// Helix insert mode
+    #[cfg(feature = "helix")]
+    #[strum(serialize = "HelixInsert", serialize = "helix_insert")]
+    HelixInsert,
+
+    /// Helix select mode
+    #[cfg(feature = "helix")]
+    #[strum(serialize = "HelixSelect", serialize = "helix_select")]
+    HelixSelect,
+
     /// A custom mode
     Custom,
 }
@@ -124,6 +164,12 @@ impl Display for PromptEditMode {
             Self::Emacs => write!(f, "Emacs"),
             Self::Vi(Vi::Normal) => write!(f, "Vi_Normal"),
             Self::Vi(Vi::Insert) => write!(f, "Vi_Insert"),
+            #[cfg(feature = "helix")]
+            Self::Helix(PromptHelixMode::Normal) => write!(f, "Helix_Normal"),
+            #[cfg(feature = "helix")]
+            Self::Helix(PromptHelixMode::Insert) => write!(f, "Helix_Insert"),
+            #[cfg(feature = "helix")]
+            Self::Helix(PromptHelixMode::Select) => write!(f, "Helix_Select"),
             Self::Custom(s) => write!(f, "Custom_{s}"),
         }
     }
@@ -139,6 +185,12 @@ impl IntoDiscriminant for PromptEditMode {
             Self::Emacs => Self::Discriminant::Emacs,
             Self::Vi(Vi::Normal) => Self::Discriminant::ViNormal,
             Self::Vi(Vi::Insert) => Self::Discriminant::ViInsert,
+            #[cfg(feature = "helix")]
+            Self::Helix(PromptHelixMode::Normal) => Self::Discriminant::HelixNormal,
+            #[cfg(feature = "helix")]
+            Self::Helix(PromptHelixMode::Insert) => Self::Discriminant::HelixInsert,
+            #[cfg(feature = "helix")]
+            Self::Helix(PromptHelixMode::Select) => Self::Discriminant::HelixSelect,
             Self::Custom(_) => Self::Discriminant::Custom,
         }
     }

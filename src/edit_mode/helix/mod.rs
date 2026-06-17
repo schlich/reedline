@@ -75,6 +75,7 @@ impl EditMode for Helix {
 mod tests {
     use super::*;
     use crate::enums::EditCommand;
+    use crate::{core_editor::RestPolicy, PromptHelixMode};
     use crossterm::event::{Event, KeyEvent, KeyEventKind, KeyEventState};
     use rstest::rstest;
 
@@ -132,6 +133,29 @@ mod tests {
             helix_mode.edit_mode(),
             PromptEditMode::Vi(PromptViMode::Normal)
         ));
+    }
+
+    #[test]
+    fn pressing_esc_enters_helix_normal_with_block_cursor_policy() {
+        let mut helix_mode = Helix::default();
+
+        assert!(matches!(
+            helix_mode.edit_mode(),
+            PromptEditMode::Helix(PromptHelixMode::Insert)
+        ));
+        assert_eq!(helix_mode.edit_mode().rest_policy(), RestPolicy::Between);
+
+        assert_eq!(
+            helix_mode.parse_event(key_press(KeyCode::Esc, KeyModifiers::NONE)),
+            ReedlineEvent::Repaint
+        );
+
+        let mode = helix_mode.edit_mode();
+        assert!(matches!(
+            mode,
+            PromptEditMode::Helix(PromptHelixMode::Normal)
+        ));
+        assert_eq!(mode.rest_policy(), RestPolicy::Block);
     }
 
     #[test]

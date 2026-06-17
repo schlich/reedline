@@ -257,6 +257,8 @@ pub use history::{
 };
 
 mod prompt;
+#[cfg(feature = "helix")]
+pub use prompt::PromptHelixMode;
 pub use prompt::{
     DefaultPrompt, DefaultPromptSegment, Prompt, PromptEditMode, PromptEditModeDiscriminants,
     PromptHistorySearch, PromptHistorySearchStatus, PromptViMode,

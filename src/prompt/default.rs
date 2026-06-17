@@ -1,3 +1,5 @@
+#[cfg(feature = "helix")]
+use crate::PromptHelixMode;
 use crate::{Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, PromptViMode};
 
 use {
@@ -10,6 +12,12 @@ pub static DEFAULT_PROMPT_INDICATOR: &str = "> ";
 pub static DEFAULT_VI_INSERT_PROMPT_INDICATOR: &str = ": ";
 pub static DEFAULT_VI_NORMAL_PROMPT_INDICATOR: &str = "> ";
 pub static DEFAULT_MULTILINE_INDICATOR: &str = "::: ";
+#[cfg(feature = "helix")]
+pub static DEFAULT_HELIX_NORMAL_PROMPT_INDICATOR: &str = "> ";
+#[cfg(feature = "helix")]
+pub static DEFAULT_HELIX_INSERT_PROMPT_INDICATOR: &str = ": ";
+#[cfg(feature = "helix")]
+pub static DEFAULT_HELIX_SELECT_PROMPT_INDICATOR: &str = "* ";
 
 /// Simple [`Prompt`] displaying a configurable left and a right prompt.
 /// For more fine-tuned configuration, implement the [`Prompt`] trait.
@@ -65,6 +73,12 @@ impl Prompt for DefaultPrompt {
             PromptEditMode::Vi(vi_mode) => match vi_mode {
                 PromptViMode::Normal => DEFAULT_VI_NORMAL_PROMPT_INDICATOR.into(),
                 PromptViMode::Insert => DEFAULT_VI_INSERT_PROMPT_INDICATOR.into(),
+            },
+            #[cfg(feature = "helix")]
+            PromptEditMode::Helix(helix_mode) => match helix_mode {
+                PromptHelixMode::Normal => DEFAULT_HELIX_NORMAL_PROMPT_INDICATOR.into(),
+                PromptHelixMode::Insert => DEFAULT_HELIX_INSERT_PROMPT_INDICATOR.into(),
+                PromptHelixMode::Select => DEFAULT_HELIX_SELECT_PROMPT_INDICATOR.into(),
             },
             PromptEditMode::Custom(str) => format!("({str})").into(),
         }
